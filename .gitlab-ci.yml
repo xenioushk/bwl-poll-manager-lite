@@ -1,0 +1,54 @@
+variables:
+  BUILD_DIR: /home/gitlab-runner/builds/$CI_RUNNER_SHORT_TOKEN/0/free-wp-plugins/bwl-poll-manager-lite # Adjusted
+  PLUGIN_DIR: wp-content/plugins/bwl-poll-manager-lite/ # Adjusted
+  PDEPLOY_DIR: /home/$PHOST_ID/public_html/public_html/demos/$PLUGIN_DIR # Adjusted
+
+stages:
+  - build
+  - production
+  - cleanup
+
+before_script:
+  - echo "👨🏻‍💻 Getting ready!!"
+  - curl -sS https://getcomposer.org/installer | php -- --install-dir=$HOME/bin --filename=composer
+  - export PATH="$HOME/bin:$PATH"
+  - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+  - export NVM_DIR="$HOME/.nvm"
+  - source "$NVM_DIR/nvm.sh"
+
+build:
+  stage: build
+  image: node:18
+  tags: [ci, devops]
+  only: [production]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - vendor/
+  script:
+    - echo "⚙️ Building the app."
+    - composer install --prefer-dist --no-dev --no-progress --no-interaction
+    - nvm use
+    - npm install
+    - npm run make-pot
+  artifacts:
+    paths:
+      - $BUILD_DIR/vendor
+
+production:
+  stage: production
+  dependencies:
+    - build
+  only: [production]
+  tags: [ci, devops]
+  script:
+    - echo "🚀 Deploying to PRODUCTION."
+    - rsync -avz --delete --exclude-from='.rsync-exclude' -e "ssh -p ${SSH_PORT:-65002}" $BUILD_DIR/ $SSH_PUSERNAME@$SSH_PHOST:$PDEPLOY_DIR
+
+cleanup:
+  stage: cleanup
+  only: [production]
+  tags: [ci, devops]
+  script:
+    - echo "🧹Cleaning up."
+    - rm -rf $BUILD_DIR
